@@ -2,6 +2,7 @@ package repository
 
 import (
 	"fmt"
+	"github.com/gh0st3e/TodoForTechArt/internal/util"
 	"html/template"
 	"net/http"
 
@@ -11,7 +12,18 @@ import (
 	"github.com/pkg/errors"
 )
 
-func Index(w http.ResponseWriter, r *http.Request) { // Главная страница
+var queryTodo = map[string]string{
+	util.AddTodo:      "INSERT INTO `todo` (`id`,`todo`) VALUES ('%d','%s')",
+	util.ShowTodo:     "SELECT  * FROM `todo` ORDER BY `Id`",
+	util.DelTodo:      "DELETE FROM `todo` WHERE `Id`='%s'",
+	util.UpdateTodo:   "UPDATE `todo` SET `todo`='%s' WHERE `Id`='%s'",
+	util.UpdateTodoId: "UPDATE `todo` SET `id`='%d' WHERE `Id`='%d'",
+	util.GetTodoAsc:   "SELECT * FROM `todo` ORDER BY `todo`.`id` ASC",
+}
+
+type todo struct{}
+
+func (to todo) Index(w http.ResponseWriter, r *http.Request) { // Главная страница
 	t, err := template.ParseFiles("internal/templates/index.html") // Подключение html файла
 
 	if err != nil {
@@ -24,7 +36,7 @@ func Index(w http.ResponseWriter, r *http.Request) { // Главная стра�
 	}
 	defer db.Close()
 
-	res, err := db.Query("SELECT  * FROM `todo` ORDER BY `Id`") // Запрос к таблице
+	res, err := db.Query(queryTodo[util.ShowTodo]) // Запрос к таблице
 	if err != nil {
 		errors.Wrap(err, "repository.Index.Query couldn't load data from database")
 	}
@@ -43,7 +55,7 @@ func Index(w http.ResponseWriter, r *http.Request) { // Главная стра�
 
 }
 
-func DelTodo(w http.ResponseWriter, r *http.Request) { // Для удаления задачи
+func (to todo) DelTodo(w http.ResponseWriter, r *http.Request) { // Для удаления задачи
 	todo := r.FormValue("TODO_CHECKBOX")            // Кликнутый элемент для удаления
 	todoForUpdate := r.FormValue("UPDATE_CHECKBOX") // Кликнутый элемент для изменения
 	NewTodo := r.FormValue("UPDATE_TODO")           // Новый текст для задачи
@@ -51,14 +63,14 @@ func DelTodo(w http.ResponseWriter, r *http.Request) { // Для удалени�
 	db, _ := database.ConnectToDB()
 
 	if todo != "" { // Если кликнут на удаление
-		_, err := db.Query(fmt.Sprintf("DELETE FROM `todo` WHERE `Id`='%s'", todo))
+		_, err := db.Query(fmt.Sprintf(queryTodo[util.DelTodo], todo))
 		if err != nil {
 			errors.Wrap(err, "repository.DelTodo.Query couldn't delete data from database")
 		}
-		NewID() // Функция для переопределения ID элементов в БД
+		to.NewID() // Функция для переопределения ID элементов в БД
 	} else {
 		if NewTodo != "" {
-			_, err := db.Query(fmt.Sprintf("UPDATE `todo` SET `todo`='%s' WHERE `Id`='%s'", NewTodo, todoForUpdate)) // Запрос на изменение
+			_, err := db.Query(fmt.Sprintf(queryTodo[util.UpdateTodo], NewTodo, todoForUpdate)) // Запрос на изменение
 			if err != nil {
 				errors.Wrap(err, "repository.DelTodo.Query couldn't update data from database")
 			}
@@ -69,12 +81,12 @@ func DelTodo(w http.ResponseWriter, r *http.Request) { // Для удалени�
 	http.Redirect(w, r, "/", http.StatusSeeOther) // Переадресация на главную страницу
 }
 
-func NewID() { //Функция для переопределения ID в бд
+func (to todo) NewID() { //Функция для переопределения ID в бд
 	db, err := database.ConnectToDB()
 
 	var size uint = 1 // переменная для установки новых ID
 
-	res, err := db.Query("SELECT * FROM `todo` ORDER BY `todo`.`id` ASC")
+	res, err := db.Query(queryTodo[util.GetTodoAsc])
 	if err != nil {
 		errors.Wrap(err, "repository.NewID.Query couldn't load data from database")
 	}
@@ -88,13 +100,13 @@ func NewID() { //Функция для переопределения ID в бд
 		}
 
 		// Через цикл перебриаем все задачи и меняем их текущий айди на новый начиная с 1, затем инкриментируем переменную size
-		db.Query(fmt.Sprintf("UPDATE `todo` SET `id`='%d' WHERE `Id`='%d'", size, post.ID))
+		db.Query(fmt.Sprintf(queryTodo[util.UpdateTodoId], size, post.ID))
 		size++
 	}
 
 }
 
-func AddTodo(w http.ResponseWriter, r *http.Request) { // Функция добавления задачи в БД
+func (to todo) AddTodo(w http.ResponseWriter, r *http.Request) { // Функция добавления задачи в БД
 
 	todo := r.FormValue("NEW_TODO")
 
@@ -105,7 +117,7 @@ func AddTodo(w http.ResponseWriter, r *http.Request) { // Функция доб�
 
 		var size uint = 0
 
-		res, err := db.Query("SELECT * FROM `todo` ORDER BY `todo`.`id` ASC")
+		res, err := db.Query(queryTodo[util.GetTodoAsc])
 		if err != nil {
 			errors.Wrap(err, "repository.AddTodo.Query couldn't load data from database")
 		}
@@ -122,7 +134,7 @@ func AddTodo(w http.ResponseWriter, r *http.Request) { // Функция доб�
 
 		}
 
-		insert, err := db.Query(fmt.Sprintf("INSERT INTO `todo` (`id`,`todo`) VALUES ('%d','%s')", size+1, todo))
+		insert, err := db.Query(fmt.Sprintf(queryTodo[util.AddTodo], size+1, todo))
 
 		if err != nil {
 			errors.Wrap(err, "repository.AddTodo.Query couldn't add data from database")
